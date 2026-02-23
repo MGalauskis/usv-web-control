@@ -162,12 +162,17 @@ class H264Stream:
         [1 byte: topic name length N] [N bytes: topic name UTF-8] [H.264 data]
     """
 
-    def __init__(self, topic_name, width, height, fps, encoding):
+    # Quality → CRF / QP value mapping for software / hardware encoders
+    QUALITY_CRF = {"low": 35, "medium": 26, "high": 18}
+    QUALITY_QP  = {"low": 32, "medium": 23, "high": 15}
+
+    def __init__(self, topic_name, width, height, fps, encoding, quality="medium"):
         self.topic_name = topic_name
         self.width = width
         self.height = height
         self.fps = fps
         self.encoding = encoding
+        self.quality = quality
         self.on_data = None  # callback(binary_frame) — set by usv_node
 
         self._process = None
@@ -192,6 +197,8 @@ class H264Stream:
     def _build_ffmpeg_cmd(self, pix_fmt):
         """Build FFmpeg command using the pre-detected best encoder."""
         encoder = _BEST_ENCODER
+        qp  = self.QUALITY_QP.get(self.quality, 23)
+        crf = self.QUALITY_CRF.get(self.quality, 26)
 
         cmd = [
             "ffmpeg",
@@ -218,9 +225,9 @@ class H264Stream:
                 "-preset", "p1",          # fastest NVENC preset
                 "-tune", "ull",            # ultra low latency
                 "-profile:v", "baseline",
-                "-level", "auto",          # auto-select level based on resolution
+                "-level", "auto",
                 "-rc", "constqp",
-                "-qp", "23",
+                "-qp", str(qp),
                 "-g", str(self.fps),
             ]
         elif encoder == "qsv":
@@ -230,6 +237,7 @@ class H264Stream:
                 "-preset", "veryfast",
                 "-profile:v", "baseline",
                 "-g", str(self.fps),
+                "-global_quality", str(qp),
             ]
         else:  # software fallback
             cmd += [
@@ -238,6 +246,7 @@ class H264Stream:
                 "-preset", "ultrafast",
                 "-tune", "zerolatency",
                 "-profile:v", "baseline",
+                "-crf", str(crf),
                 "-g", str(self.fps),
                 "-keyint_min", str(self.fps),
             ]
@@ -416,7 +425,7 @@ class H264Stream:
             pass
         self._process = None
 
-    def restart(self, width, height, fps, encoding):
+    def restart(self, width, height, fps, encoding, quality=None):
         """Restart FFmpeg with new parameters."""
         _log("Restarting for %s: %dx%d %s -> %dx%d %s"
              % (self.topic_name, self.width, self.height, self.encoding,
@@ -426,6 +435,8 @@ class H264Stream:
         self.height = height
         self.fps = fps
         self.encoding = encoding
+        if quality is not None:
+            self.quality = quality
         self._start_ffmpeg()
 
     @property

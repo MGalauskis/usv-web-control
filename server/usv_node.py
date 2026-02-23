@@ -110,6 +110,10 @@ class USVWebNode(Node):
         self._last_image_feed_time = {}   # topic_name -> time.monotonic() of last fed frame
         self._image_frame_count = {}      # topic_name -> total frames received (for FPS detection sampling)
 
+        # --- Per-stream video settings overrides (from browser) ---
+        # topic_name -> {"fps": int, "quality": str}  (0 fps = auto)
+        self._video_settings = {}
+
         # --- GStreamer direct camera streams (bypass ROS2) ---
         self.camera_streams = {}        # camera_id -> GStreamerStream instance
         self.camera_remote_subs = {}    # camera_id -> set of socket UUIDs
@@ -424,12 +428,19 @@ class USVWebNode(Node):
 
         stream = self.video_streams.get(topic_name)
 
+        # Respect FPS override from browser (0 = auto)
+        settings = self._video_settings.get(topic_name, {})
+        fps_override = settings.get("fps", 0)
+        if fps_override > 0:
+            target_fps = min(fps_override, get_max_fps())
+        quality = settings.get("quality", "medium")
+
         if stream is None:
             # First frame — lazily spawn FFmpeg (need dimensions from message)
             self.loginfo("Starting video stream for %s: %dx%d @ %dfps (source: %dfps, encoder: %s)"
                          % (topic_name, width, height, target_fps, source_fps, get_encoder()))
             stream = H264Stream(
-                topic_name, width, height, target_fps, encoding
+                topic_name, width, height, target_fps, encoding, quality=quality
             )
             stream.on_data = lambda data: self._send_video_binary(data)
             self.video_streams[topic_name] = stream
@@ -441,19 +452,19 @@ class USVWebNode(Node):
                 return  # wait before trying again
             stream._last_restart_time = now
             self.loginfo("FFmpeg crashed for %s, restarting..." % topic_name)
-            stream.restart(width, height, target_fps, encoding)
+            stream.restart(width, height, target_fps, encoding, quality=quality)
             stream.on_data = lambda data: self._send_video_binary(data)
             self._send_video_meta(topic_name, target_fps, width, height)
         elif stream.width != width or stream.height != height or stream.encoding != encoding:
             # Resolution or encoding changed — restart
             self.loginfo("Image params changed for %s, restarting FFmpeg" % topic_name)
-            stream.restart(width, height, target_fps, encoding)
+            stream.restart(width, height, target_fps, encoding, quality=quality)
             stream.on_data = lambda data: self._send_video_binary(data)
             self._send_video_meta(topic_name, target_fps, width, height)
         elif stream.fps != target_fps:
-            # FPS changed (auto-detection updated) — restart FFmpeg with new rate
+            # FPS changed (auto-detection updated or override applied) — restart
             self.loginfo("FPS changed for %s: %d -> %d, restarting FFmpeg" % (topic_name, stream.fps, target_fps))
-            stream.restart(width, height, target_fps, encoding)
+            stream.restart(width, height, target_fps, encoding, quality=quality)
             stream.on_data = lambda data: self._send_video_binary(data)
             self._send_video_meta(topic_name, target_fps, width, height)
 
@@ -540,6 +551,47 @@ class USVWebNode(Node):
             traceback.print_exc()
         finally:
             self.lock.release()
+
+    def on_video_settings(self, topic, fps, quality):
+        """
+        Browser sent per-stream settings override ["f", {topic, fps, quality}].
+        fps=0 means auto (use source FPS). quality one of low/medium/high.
+        Restarts the relevant FFmpeg or GStreamer stream with new params.
+        """
+        fps = int(fps) if fps else 0
+        quality = quality if quality in ("low", "medium", "high") else "medium"
+        prev = self._video_settings.get(topic, {})
+        if prev.get("fps") == fps and prev.get("quality") == quality:
+            return  # no change
+        self._video_settings[topic] = {"fps": fps, "quality": quality}
+        self.loginfo("Video settings for %s: fps=%s quality=%s" % (topic, fps or "auto", quality))
+
+        # --- ROS2 image topic (FFmpeg pipeline) ---
+        if topic in self.video_streams:
+            stream = self.video_streams[topic]
+            target_fps = fps if fps > 0 else self._detected_fps.get(topic, self.default_video_fps)
+            target_fps = min(target_fps, get_max_fps())
+            stream.restart(stream.width, stream.height, target_fps, stream.encoding,
+                           quality=quality)
+            stream.on_data = lambda data: self._send_video_binary(data)
+            self._send_video_meta(topic, target_fps, stream.width, stream.height)
+
+        # --- Direct camera (GStreamer pipeline) ---
+        elif topic in self.camera_streams:
+            config = dict(self._camera_configs_by_id.get(topic, {}))
+            if fps > 0:
+                config["fps"] = fps
+            config["quality"] = quality
+            self.camera_streams[topic].restart(config)
+            self.camera_streams[topic].on_data = lambda data: self._send_video_binary(data)
+            info = self.cameras_available.get(topic, {})
+            self._send_video_meta(
+                topic,
+                fps if fps > 0 else info.get("fps", 30),
+                info.get("width", 0),
+                info.get("height", 0),
+                encoder=get_gst_encoder() or "gstreamer",
+            )
 
     def _on_system_metrics(self, data):
         """Called by SystemMetricsCollector with CPU/GPU usage data."""

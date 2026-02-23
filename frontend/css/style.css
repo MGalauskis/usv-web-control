@@ -410,6 +410,52 @@ body {
     pointer-events: none;
 }
 
+/* Settings toolbar shown below the video */
+.image-viewer-settings {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--surface);
+    border-top: 1px solid var(--surface-alt);
+    border-radius: 0 0 8px 8px;
+    flex-wrap: wrap;
+}
+
+.iv-setting-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    user-select: none;
+}
+
+.iv-setting-select {
+    background: var(--surface-alt);
+    color: var(--text);
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.iv-setting-select:hover {
+    border-color: var(--accent-dim);
+}
+
+.iv-setting-select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.iv-setting-info {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: monospace;
+}
+
 /* --- Generic Viewer Table --- */
 .viewer-table {
     width: 100%;

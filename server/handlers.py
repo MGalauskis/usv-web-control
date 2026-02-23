@@ -47,6 +47,7 @@ class USVSocketHandler(tornado.websocket.WebSocketHandler):
     MSG_CAMERAS = "c"     # camera list (server -> browser)
     MSG_CAM_SUB = "d"     # camera subscribe (browser -> server)
     MSG_CAM_UNSUB = "e"   # camera unsubscribe (browser -> server)
+    MSG_VIDEO_SETTINGS = "f"  # per-stream settings override (browser -> server)
 
     PING_SEQ = "s"
     PONG_SEQ = "s"
@@ -252,3 +253,12 @@ class USVSocketHandler(tornado.websocket.WebSocketHandler):
             if camera_id is None:
                 return
             self.node.on_camera_unsubscribe(camera_id, self.id)
+
+        elif msg_type == self.MSG_VIDEO_SETTINGS:
+            if len(argv) != 2 or type(argv[1]) is not dict:
+                return
+            topic = argv[1].get("topic")
+            fps = argv[1].get("fps")       # int or 0 (auto)
+            quality = argv[1].get("quality")  # "low" / "medium" / "high"
+            if topic is not None:
+                self.node.on_video_settings(topic, fps, quality)

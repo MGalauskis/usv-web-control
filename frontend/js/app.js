@@ -188,6 +188,7 @@ function subscribeTopic(topicName) {
     activeViewers[topicName] = new ViewerClass(viewerArea, topicName, topicType, {
         onClose: (tn) => unsubscribeTopic(tn),
     });
+    _wireVideoSettings(activeViewers[topicName]);
     log('Subscribed to ' + topicName);
     updateTopicListHighlights();
 }
@@ -258,6 +259,16 @@ conn.onVideoMeta = (data) => {
         ' @ ' + data.fps + 'fps (' + data.encoder + ')');
 };
 
+// Wire video settings callback for ImageViewer tiles
+function _wireVideoSettings(viewer) {
+    if (!(viewer instanceof ImageViewer)) return;
+    viewer.onSettingsChange = (topic, settings) => {
+        conn.sendVideoSettings(topic, settings.fps, settings.quality);
+        log('Video settings: ' + topic + ' fps=' + (settings.fps || 'auto') +
+            ' quality=' + settings.quality);
+    };
+}
+
 // --- Direct cameras (GStreamer, bypass ROS2) ---
 
 conn.onCameras = (cameras) => {
@@ -307,6 +318,7 @@ function subscribeCamera(cameraId) {
     activeViewers[cameraId] = new ImageViewer(viewerArea, cameraId, 'camera', {
         onClose: (id) => unsubscribeCamera(id),
     });
+    _wireVideoSettings(activeViewers[cameraId]);
     log('Subscribed to camera: ' + displayName);
     updateCameraListHighlights();
 }

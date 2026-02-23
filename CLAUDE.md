@@ -47,7 +47,7 @@ No build step for the frontend — it's vanilla HTML/CSS/JS served statically by
 - `frontend/js/app.js` — glue: wires connection + joystick to DOM, updates stick visuals, axes grid, buttons grid, log panel. Routes binary video data to ImageViewer instances. Displays CPU/GPU metrics.
 - `frontend/js/viewers/Viewer.js` — base class for topic viewers. Viewer registry maps ROS2 message types to viewer classes.
 - `frontend/js/viewers/GenericViewer.js` — fallback viewer that renders any ROS2 message as a key-value table.
-- `frontend/js/viewers/ImageViewer.js` — H.264 video viewer using JMuxer (MSE + fMP4). Receives binary H.264 NAL units and renders to `<video>` element.
+- `frontend/js/viewers/ImageViewer.js` — H.264 video viewer using JMuxer (MSE + fMP4). Receives binary H.264 NAL units and renders to `<video>` element. JMuxer is created lazily on first `"v"` metadata message so FPS is always correct from frame 1. Includes per-tile settings toolbar (FPS override, quality).
 - `frontend/js/lib/jmuxer.min.js` — vendored JMuxer library (no CDN — USV may not have internet).
 
 ## WebSocket Protocol
@@ -69,6 +69,7 @@ Text messages are JSON arrays: `[type_char, payload_dict]`
 | B→S | `"j"` | Joystick data (axes + buttons arrays) |
 | B→S | `"d"` | Subscribe to direct camera stream |
 | B→S | `"e"` | Unsubscribe from direct camera stream |
+| B→S | `"f"` | Per-stream video settings override (fps, quality) |
 
 Binary messages (WebSocket binary frames) are used for H.264 video data:
 ```

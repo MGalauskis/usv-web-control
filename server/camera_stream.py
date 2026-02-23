@@ -127,18 +127,24 @@ def get_gst_encoder():
 # GStreamer pipeline builder
 # ---------------------------------------------------------------------------
 
-def _encoder_params(encoder, fps):
+def _encoder_params(encoder, fps, quality="medium"):
     """Return encoder-specific GStreamer properties as a string."""
+    # quality -> QP/bitrate mapping
+    qp_map      = {"low": 32, "medium": 23, "high": 15}
+    bitrate_map = {"low": 1000, "medium": 2000, "high": 4000}  # kbps for x264enc
+    qp = qp_map.get(quality, 23)
+    bitrate = bitrate_map.get(quality, 2000)
+
     if encoder == "nvh264enc":
-        return "nvh264enc preset=low-latency-hq rc-mode=constqp qp-const=23 gop-size=%d" % fps
+        return "nvh264enc preset=low-latency-hq rc-mode=constqp qp-const=%d gop-size=%d" % (qp, fps)
     elif encoder == "nvv4l2h264enc":
-        return "nvv4l2h264enc preset-level=1 iframeinterval=%d bitrate=4000000" % fps
+        return "nvv4l2h264enc preset-level=1 iframeinterval=%d bitrate=%d" % (fps, bitrate * 1000)
     elif encoder == "vaapih264enc":
-        return "vaapih264enc rate-control=cqp init-qp=23 keyframe-period=%d" % fps
+        return "vaapih264enc rate-control=cqp init-qp=%d keyframe-period=%d" % (qp, fps)
     elif encoder == "qsvh264enc":
         return "qsvh264enc target-usage=7 gop-size=%d" % fps
     elif encoder == "x264enc":
-        return "x264enc tune=zerolatency speed-preset=ultrafast key-int-max=%d bitrate=2000 ! video/x-h264,profile=baseline" % fps
+        return "x264enc tune=zerolatency speed-preset=ultrafast key-int-max=%d bitrate=%d ! video/x-h264,profile=baseline" % (fps, bitrate)
     else:
         return "x264enc tune=zerolatency speed-preset=ultrafast key-int-max=%d ! video/x-h264,profile=baseline" % fps
 
@@ -148,7 +154,8 @@ def build_gst_pipeline(config, encoder):
     Build a gst-launch-1.0 pipeline string from a camera config dict.
 
     Args:
-        config: dict with keys like source, device, url, width, height, fps, etc.
+        config: dict with keys like source, device, url, width, height, fps,
+                quality ("low"/"medium"/"high"), passthrough, etc.
         encoder: GStreamer encoder element name (e.g. 'x264enc', 'nvh264enc')
 
     Returns:
@@ -158,6 +165,7 @@ def build_gst_pipeline(config, encoder):
     w = config.get("width", 640)
     h = config.get("height", 480)
     fps = config.get("fps", 30)
+    quality = config.get("quality", "medium")
     passthrough = config.get("passthrough", False)
 
     # --- Source segment ---
@@ -201,7 +209,7 @@ def build_gst_pipeline(config, encoder):
         enc = "nvv4l2h264enc preset-level=1 iframeinterval=%d bitrate=4000000" % fps
         convert = ""
     else:
-        enc = _encoder_params(encoder, fps)
+        enc = _encoder_params(encoder, fps, quality)
         convert = "videoconvert ! "
 
     tail = (

@@ -169,6 +169,16 @@ class USVConnection {
         this._send(['e', { cameraId: cameraId }]);
     }
 
+    /**
+     * Send per-stream video settings override to the server.
+     * @param {string} topic  — ROS2 topic name or camera ID
+     * @param {number} fps    — target FPS (0 = auto / use source rate)
+     * @param {string} quality — "low" | "medium" | "high"
+     */
+    sendVideoSettings(topic, fps, quality) {
+        this._send(['f', { topic: topic, fps: fps || 0, quality: quality || 'medium' }]);
+    }
+
     _send(data) {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify(data));
