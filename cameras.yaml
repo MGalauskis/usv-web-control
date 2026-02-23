@@ -41,3 +41,13 @@ cameras:
     width: 640
     height: 480
     fps: 30
+
+  # Second test pattern with passthrough flag — for testing the disabled settings UI.
+  # Remove this entry once RTSP passthrough is tested with real hardware.
+  - name: "Test Pattern (passthrough)"
+    source: test
+    pattern: smpte
+    width: 640
+    height: 480
+    fps: 30
+    passthrough: true

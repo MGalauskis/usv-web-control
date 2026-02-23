@@ -470,7 +470,7 @@ class USVWebNode(Node):
 
         stream.feed_frame(raw_data)
 
-    def _send_video_meta(self, topic_name, fps, width, height, encoder=None):
+    def _send_video_meta(self, topic_name, fps, width, height, encoder=None, passthrough=False):
         """Send video stream metadata to all browser clients."""
         if self.event_loop:
             self.event_loop.add_callback(
@@ -481,6 +481,7 @@ class USVWebNode(Node):
                     "width": width,
                     "height": height,
                     "encoder": encoder or get_encoder(),
+                    "passthrough": passthrough,
                 }]
             )
 
@@ -536,6 +537,7 @@ class USVWebNode(Node):
                     info.get("width", 0),
                     info.get("height", 0),
                     encoder=get_gst_encoder() or "gstreamer",
+                    passthrough=info.get("passthrough", False),
                 )
 
             # Stop streams that nobody wants anymore
@@ -591,6 +593,7 @@ class USVWebNode(Node):
                 info.get("width", 0),
                 info.get("height", 0),
                 encoder=get_gst_encoder() or "gstreamer",
+                passthrough=info.get("passthrough", False),
             )
 
     def _on_system_metrics(self, data):

@@ -143,11 +143,29 @@ class ImageViewer extends Viewer {
      */
     onVideoMeta(data) {
         const newFps = data.fps || 30;
+        const isPassthrough = !!data.passthrough;
 
         // Update info label
         if (data.width && data.height) {
             this._infoLabel.textContent =
                 data.width + '×' + data.height + ' ' + (data.encoder || '');
+        }
+
+        // Disable/enable controls based on whether this is a passthrough stream.
+        // Passthrough RTSP has no encoder, so FPS/quality settings have no effect.
+        const PASSTHROUGH_TITLE = 'Not available for passthrough streams (source controls quality/FPS)';
+        this._fpsSelect.disabled = isPassthrough;
+        this._qualSelect.disabled = isPassthrough;
+        if (isPassthrough) {
+            this._fpsSelect.title = PASSTHROUGH_TITLE;
+            this._qualSelect.title = PASSTHROUGH_TITLE;
+            this._fpsSelect.classList.add('iv-setting-select--disabled');
+            this._qualSelect.classList.add('iv-setting-select--disabled');
+        } else {
+            this._fpsSelect.title = '';
+            this._qualSelect.title = '';
+            this._fpsSelect.classList.remove('iv-setting-select--disabled');
+            this._qualSelect.classList.remove('iv-setting-select--disabled');
         }
 
         if (newFps === this._currentFps) return;  // nothing to do

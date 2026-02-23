@@ -449,6 +449,13 @@ body {
     border-color: var(--accent);
 }
 
+.iv-setting-select--disabled,
+.iv-setting-select:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    border-color: #333;
+}
+
 .iv-setting-info {
     margin-left: auto;
     font-size: 11px;
