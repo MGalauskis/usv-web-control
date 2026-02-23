@@ -1,0 +1,458 @@
+/* ===================================================
+   Virtual Joystick Styles
+   Uses existing CSS variables from style.css
+   =================================================== */
+
+/* --- Root container --- */
+.vj-root {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+}
+
+/* --- Main layout: throttle | buttons | steering --- */
+.vj-layout {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    padding: 12px 8px;
+}
+
+/* --- Slider sections --- */
+.vj-throttle-section,
+.vj-steering-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.vj-slider-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+}
+
+.vj-slider-value {
+    font-size: 12px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    color: var(--text);
+    min-width: 40px;
+    text-align: center;
+}
+
+/* --- Throttle slider (vertical) --- */
+.vj-throttle-track {
+    position: relative;
+    width: 56px;
+    height: 200px;
+    background: var(--bg);
+    border-radius: 18px;
+    border: 2px solid var(--surface-alt);
+    touch-action: none;
+    cursor: pointer;
+    overflow: hidden;
+}
+
+.vj-throttle-center-mark {
+    position: absolute;
+    left: 10%;
+    right: 10%;
+    top: 50%;
+    height: 2px;
+    background: var(--surface-alt);
+    transform: translateY(-50%);
+    pointer-events: none;
+    z-index: 1;
+}
+
+.vj-throttle-fill {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    bottom: 50%;
+    background: rgba(78, 204, 163, 0.25);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.vj-throttle-thumb {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    height: 24px;
+    margin-left: -22px;
+    margin-top: -12px;
+    background: var(--green);
+    border-radius: 12px;
+    box-shadow: 0 0 10px rgba(78, 204, 163, 0.4);
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* --- Steering slider (horizontal) --- */
+.vj-steering-track {
+    position: relative;
+    width: 200px;
+    height: 56px;
+    background: var(--bg);
+    border-radius: 18px;
+    border: 2px solid var(--surface-alt);
+    touch-action: none;
+    cursor: pointer;
+    overflow: hidden;
+}
+
+.vj-steering-center-mark {
+    position: absolute;
+    top: 10%;
+    bottom: 10%;
+    left: 50%;
+    width: 2px;
+    background: var(--surface-alt);
+    transform: translateX(-50%);
+    pointer-events: none;
+    z-index: 1;
+}
+
+.vj-steering-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    right: 50%;
+    background: rgba(78, 204, 163, 0.25);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.vj-steering-thumb {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 24px;
+    height: 44px;
+    margin-top: -22px;
+    margin-left: -12px;
+    background: var(--green);
+    border-radius: 12px;
+    box-shadow: 0 0 10px rgba(78, 204, 163, 0.4);
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* --- Buttons section --- */
+.vj-buttons-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.vj-btn-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+
+/* --- Button base --- */
+.vj-btn {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid var(--surface-alt);
+    border-radius: 6px;
+    cursor: pointer;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background 0.1s, border-color 0.1s;
+    outline: none;
+}
+
+/* --- Function buttons (F1–F4) --- */
+.vj-btn-func {
+    width: 52px;
+    height: 44px;
+    background: var(--surface);
+    color: var(--text-dim);
+}
+
+.vj-btn-func.active,
+.vj-btn-func:active {
+    background: var(--surface-alt);
+    color: var(--text);
+    border-color: var(--green);
+}
+
+/* --- Reverse toggle --- */
+.vj-btn-reverse {
+    width: 110px;
+    height: 38px;
+    background: var(--surface);
+    color: var(--text-dim);
+}
+
+.vj-btn-reverse.active {
+    background: var(--accent);
+    color: var(--text);
+    border-color: var(--accent);
+    box-shadow: 0 0 8px var(--accent-dim);
+}
+
+/* --- Emergency stop button --- */
+.vj-btn-estop {
+    width: 110px;
+    height: 48px;
+    background: var(--red);
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    border: 2px solid var(--accent-dim);
+    border-radius: 8px;
+    box-shadow: 0 0 12px rgba(233, 69, 96, 0.3);
+}
+
+.vj-btn-estop:active {
+    background: var(--accent-dim);
+    box-shadow: 0 0 20px rgba(233, 69, 96, 0.6);
+}
+
+/* --- Keyboard hints --- */
+.vj-key-hint {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    padding: 6px 0 0;
+    font-size: 10px;
+    color: var(--text-dim);
+    font-family: 'Consolas', 'Courier New', monospace;
+    opacity: 0.6;
+}
+
+/* Hide key hints on touch-only devices */
+@media (hover: none) and (pointer: coarse) {
+    .vj-key-hint {
+        display: none;
+    }
+}
+
+/* --- Read-only mode (USB gamepad visual indicator) --- */
+.vj-readonly .vj-key-hint {
+    display: none;
+}
+
+.vj-readonly .vj-watchdog-warning {
+    display: none !important;
+}
+
+.vj-readonly .vj-throttle-track,
+.vj-readonly .vj-steering-track {
+    pointer-events: none;
+    cursor: default;
+}
+
+.vj-readonly .vj-throttle-thumb,
+.vj-readonly .vj-steering-thumb {
+    background: var(--text-dim);
+    box-shadow: none;
+}
+
+/* Hide axes/buttons data grids — VJ sliders already show the same info */
+#virtual-joy-container ~ .axes-grid,
+#virtual-joy-container ~ .buttons-grid {
+    display: none;
+}
+
+/* --- Watchdog warning banner --- */
+.vj-watchdog-warning {
+    background: var(--red);
+    color: var(--text);
+    text-align: center;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 6px;
+    margin-top: 8px;
+    animation: vj-pulse 1s infinite;
+}
+
+@keyframes vj-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* =================================================
+   Fullscreen overlay styles
+   ================================================= */
+
+.fullscreen-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: #000;
+    display: flex;
+    flex-direction: column;
+}
+
+.fullscreen-overlay .fullscreen-video-bg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+    z-index: 0;
+}
+
+.fullscreen-overlay .fullscreen-no-video {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    font-size: 16px;
+    z-index: 0;
+}
+
+/* --- Top HUD bar --- */
+.fullscreen-hud-top {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: rgba(22, 33, 62, 0.7);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    color: var(--text);
+}
+
+.fullscreen-hud-top .hud-items {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+}
+
+.fullscreen-hud-top .hud-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.fullscreen-hud-top .hud-label {
+    color: var(--text-dim);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.fullscreen-exit-btn {
+    width: 48px;
+    height: 48px;
+    background: rgba(26, 26, 46, 0.6);
+    border: 1px solid var(--surface-alt);
+    color: var(--text-dim);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation;
+}
+
+.fullscreen-exit-btn:hover,
+.fullscreen-exit-btn:active {
+    color: var(--red);
+    background: rgba(26, 26, 46, 0.9);
+}
+
+/* --- Bottom controls area --- */
+.fullscreen-controls {
+    position: relative;
+    z-index: 2;
+    margin-top: auto;
+    padding: 12px 16px 24px;
+    background: rgba(22, 33, 62, 0.5);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+.fullscreen-controls .vj-layout {
+    opacity: 0.85;
+}
+
+.fullscreen-controls .vj-key-hint {
+    opacity: 0.4;
+}
+
+/* --- Responsive adjustments --- */
+
+/* Small screens: shrink sliders slightly */
+@media (max-width: 500px) {
+    .vj-throttle-track {
+        height: 160px;
+        width: 48px;
+    }
+
+    .vj-steering-track {
+        width: 160px;
+        height: 48px;
+    }
+
+    .vj-layout {
+        gap: 12px;
+    }
+
+    .vj-btn-func {
+        width: 44px;
+        height: 38px;
+        font-size: 12px;
+    }
+
+    .vj-btn-reverse,
+    .vj-btn-estop {
+        width: 94px;
+        height: 38px;
+        font-size: 12px;
+    }
+}
+
+/* Landscape phone: wider steering, shorter throttle */
+@media (max-height: 500px) and (orientation: landscape) {
+    .vj-throttle-track {
+        height: 140px;
+    }
+
+    .vj-steering-track {
+        width: 240px;
+    }
+
+    .vj-layout {
+        gap: 16px;
+    }
+}
+
+/* Header fullscreen button */
+#fullscreen-btn {
+    font-size: 16px;
+    width: 32px;
+    height: 32px;
+}
+
+/* Body class to hide normal layout during fullscreen */
+body.fullscreen-active .header,
+body.fullscreen-active .main {
+    display: none !important;
+}

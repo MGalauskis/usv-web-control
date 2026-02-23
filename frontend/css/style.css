@@ -1,0 +1,485 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --bg: #1a1a2e;
+    --surface: #16213e;
+    --surface-alt: #0f3460;
+    --accent: #e94560;
+    --accent-dim: #a83248;
+    --text: #eee;
+    --text-dim: #888;
+    --green: #4ecca3;
+    --red: #e94560;
+    --yellow: #f0c040;
+}
+
+body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow-x: hidden;
+}
+
+/* --- Header --- */
+.header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--surface-alt);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.status-bar {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    font-size: 13px;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--red);
+    transition: background 0.3s;
+}
+
+.status-dot.connected {
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+}
+
+/* --- Latency indicator --- */
+.latency-indicator {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+    gap: 6px;
+}
+
+#latency-graph {
+    border-radius: 3px;
+    background: var(--bg);
+    vertical-align: middle;
+}
+
+.latency-indicator.good { color: var(--green); }
+.latency-indicator.warn { color: var(--yellow); }
+.latency-indicator.bad  { color: var(--red); }
+
+/* --- Bandwidth indicator --- */
+.bandwidth-indicator {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+    gap: 4px;
+}
+
+/* --- Resource indicators (CPU / GPU) --- */
+.resource-indicator {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+    gap: 5px;
+}
+
+.resource-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    min-width: 26px;
+}
+
+.resource-bar {
+    width: 48px;
+    height: 8px;
+    background: var(--bg);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.resource-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--green);
+    border-radius: 4px;
+    transition: width 0.5s ease, background 0.5s ease;
+}
+
+.resource-value {
+    min-width: 32px;
+    text-align: right;
+    font-size: 11px;
+}
+
+/* --- Main Layout --- */
+.main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    padding: 16px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+/* --- Panels --- */
+.panel {
+    background: var(--surface);
+    border-radius: 8px;
+    border: 1px solid var(--surface-alt);
+    overflow: hidden;
+}
+
+.panel-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--surface-alt);
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+}
+
+.panel-body {
+    padding: 16px;
+}
+
+/* --- Joystick Panel --- */
+.joy-status {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+    min-height: 20px;
+}
+
+.joy-status.active {
+    color: var(--green);
+}
+
+/* --- Axes / Buttons --- */
+.axes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 8px;
+}
+
+.axis-item, .button-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg);
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: 'Consolas', 'Courier New', monospace;
+}
+
+.axis-label, .button-label {
+    color: var(--text-dim);
+}
+
+.axis-value {
+    color: var(--text);
+    min-width: 60px;
+    text-align: right;
+}
+
+.axis-bar {
+    width: 40px;
+    height: 6px;
+    background: var(--surface-alt);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-left: 6px;
+}
+
+.axis-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.05s;
+}
+
+.button-item.pressed {
+    background: var(--accent-dim);
+}
+
+.buttons-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 6px;
+    margin-top: 12px;
+}
+
+/* --- Topics Panel --- */
+.topics-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.topic-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--bg);
+    font-size: 12px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.15s;
+}
+
+.topic-item:hover {
+    background: var(--surface-alt);
+}
+
+.topic-item.subscribed {
+    background: rgba(78, 204, 163, 0.12);
+    border-left: 3px solid var(--green);
+}
+
+.topic-name {
+    color: var(--green);
+    word-break: break-all;
+}
+
+.topic-type {
+    color: var(--text-dim);
+    margin-left: 12px;
+    white-space: nowrap;
+}
+
+/* Camera items — distinct accent to differentiate from ROS2 topics */
+.camera-item .topic-name {
+    color: var(--accent);
+}
+
+.camera-item.subscribed {
+    background: rgba(233, 69, 96, 0.12);
+    border-left: 3px solid var(--accent);
+}
+
+/* --- Topic Viewer Cards --- */
+#viewer-area {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 12px;
+}
+
+#viewer-area:empty {
+    display: none;
+}
+
+.viewer-card {
+    background: var(--surface);
+    border-radius: 8px;
+    border: 1px solid var(--surface-alt);
+    overflow: hidden;
+    transition: opacity 0.15s, box-shadow 0.15s;
+}
+
+.viewer-card.paused {
+    opacity: 0.6;
+}
+
+.viewer-card.dragging {
+    opacity: 0.4;
+    outline: 2px dashed var(--accent);
+    outline-offset: -2px;
+}
+
+.viewer-card.drag-over {
+    outline: 2px solid var(--green);
+    outline-offset: -2px;
+    box-shadow: 0 0 12px rgba(78, 204, 163, 0.3);
+}
+
+.viewer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--surface-alt);
+    background: var(--surface-alt);
+    cursor: grab;
+}
+
+.viewer-card.dragging .viewer-header {
+    cursor: grabbing;
+}
+
+.viewer-title-area {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.viewer-topic-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--green);
+    font-family: 'Consolas', 'Courier New', monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.viewer-topic-type {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: 'Consolas', 'Courier New', monospace;
+}
+
+.viewer-btn-group {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.viewer-btn {
+    background: none;
+    border: 1px solid var(--surface);
+    color: var(--text-dim);
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
+}
+
+.viewer-btn:hover {
+    background: var(--surface);
+    color: var(--text);
+}
+
+.viewer-btn-close:hover {
+    color: var(--red);
+}
+
+.viewer-content {
+    position: relative;
+    padding: 8px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+/* --- Image Viewer --- */
+.viewer-content:has(.image-viewer-video) {
+    max-height: none;
+    padding: 0;
+    overflow: visible;
+}
+
+.image-viewer-video {
+    width: 100%;
+    background: #000;
+    display: block;
+    border-radius: 0 0 8px 8px;
+}
+
+.image-viewer-status {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--text-dim);
+    font-size: 0.9em;
+    pointer-events: none;
+}
+
+/* --- Generic Viewer Table --- */
+.viewer-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-family: 'Consolas', 'Courier New', monospace;
+}
+
+.viewer-table tr:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.viewer-field {
+    color: var(--text-dim);
+    padding: 3px 8px;
+    white-space: nowrap;
+    vertical-align: top;
+    width: 1%;
+}
+
+.viewer-value {
+    color: var(--text);
+    padding: 3px 8px;
+    word-break: break-all;
+}
+
+.viewer-group-row td {
+    color: var(--text);
+    font-weight: 600;
+    padding: 4px 8px;
+    border-top: 1px solid var(--surface-alt);
+}
+
+.viewer-collapse-icon {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-right: 4px;
+}
+
+.viewer-null    { color: var(--text-dim); font-style: italic; }
+.viewer-bool-true  { color: var(--green); }
+.viewer-bool-false { color: var(--red); }
+.viewer-number  { color: #7ab8ff; }
+.viewer-string  { color: #f0c040; }
+.viewer-array   { color: var(--text-dim); }
+.viewer-dim     { color: var(--text-dim); font-size: 11px; }
+
+/* --- Log Panel --- */
+.log-output {
+    background: var(--bg);
+    border-radius: 4px;
+    padding: 10px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    max-height: 300px;
+    overflow-y: auto;
+    line-height: 1.6;
+}
+
+.log-line {
+    color: var(--text-dim);
+}
+
+.log-line.info { color: var(--text); }
+.log-line.warn { color: var(--yellow); }
+.log-line.error { color: var(--red); }
+
+/* --- Responsive --- */
+@media (max-width: 800px) {
+    .main {
+        grid-template-columns: 1fr;
+    }
+}

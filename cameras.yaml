@@ -1,0 +1,43 @@
+# USV Web Control — Camera Configuration
+#
+# This file is optional. If absent, the server auto-discovers V4L2 cameras.
+# If present, only the cameras listed here are available (no auto-discovery).
+#
+# Supported source types:
+#   v4l2      — USB/UVC cameras via V4L2 (Linux)
+#   rtsp      — IP cameras via RTSP (set passthrough: true if already H.264)
+#   test      — GStreamer test pattern (for development without hardware)
+#   libcamera — CSI cameras via libcamera
+#   nvargus   — NVIDIA Jetson CSI cameras via Argus
+
+cameras:
+  # Example: USB camera
+  # - name: "Forward Camera"
+  #   source: v4l2
+  #   device: /dev/video0
+  #   width: 1920
+  #   height: 1080
+  #   fps: 30
+
+  # Example: IP camera (H.264 passthrough — no re-encoding)
+  # - name: "Aft Camera"
+  #   source: rtsp
+  #   url: rtsp://192.168.1.100:554/stream
+  #   passthrough: true
+
+  # Example: IP camera (re-encode to control quality/fps)
+  # - name: "Side Camera"
+  #   source: rtsp
+  #   url: rtsp://192.168.1.101:554/stream
+  #   passthrough: false
+  #   width: 1280
+  #   height: 720
+  #   fps: 15
+
+  # Test pattern (works without any camera hardware)
+  - name: "Test Pattern"
+    source: test
+    pattern: ball
+    width: 640
+    height: 480
+    fps: 30

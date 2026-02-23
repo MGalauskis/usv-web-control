@@ -1,0 +1,8 @@
+# pip-installable dependencies
+tornado>=6.0
+psutil>=5.9
+
+# ROS2 packages (installed via rosdep / apt, not pip):
+#   rclpy
+#   sensor_msgs
+#   rosgraph_msgs
