@@ -24,6 +24,8 @@ class USVConnection {
         this.onVideoMeta = null;     // (data: {topic, fps, width, height, encoder})
         this.onSystemInfo = null;    // (data: {hostname, version})
         this.onCameras = null;       // (cameras: {cameraId: {name, source, ...}})
+        this.onMissions = null;      // (data: {missions: [...]})
+        this.onGpsPos = null;        // (data: {lat, lng, topic})
 
         // Bandwidth tracking
         this._bytesReceived = 0;
@@ -145,6 +147,14 @@ class USVConnection {
 
             case 'c': // CAMERAS list (direct GStreamer cameras)
                 if (this.onCameras) this.onCameras(data);
+                break;
+
+            case 'w': // MISSION LIST
+                if (this.onMissions) this.onMissions(data);
+                break;
+
+            case 'g': // GPS POSITION (USV)
+                if (this.onGpsPos) this.onGpsPos(data);
                 break;
         }
     }

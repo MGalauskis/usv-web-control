@@ -1,4 +1,5 @@
 import json
+import os
 import time
 import types
 import uuid
@@ -48,6 +49,8 @@ class USVSocketHandler(tornado.websocket.WebSocketHandler):
     MSG_CAM_SUB = "d"     # camera subscribe (browser -> server)
     MSG_CAM_UNSUB = "e"   # camera unsubscribe (browser -> server)
     MSG_VIDEO_SETTINGS = "f"  # per-stream settings override (browser -> server)
+    MSG_MISSIONS = "w"    # mission list (server -> browser)
+    MSG_GPS_POS  = "g"    # USV GPS position update (server -> browser)
 
     PING_SEQ = "s"
     PONG_SEQ = "s"
@@ -93,6 +96,13 @@ class USVSocketHandler(tornado.websocket.WebSocketHandler):
         if self.node.cameras_available:
             self.write_message(json.dumps([self.MSG_CAMERAS,
                 self.node.cameras_available], separators=(',', ':')))
+
+        # Send mission list immediately on connect
+        if self.node.mission_manager:
+            self.write_message(json.dumps(
+                [self.MSG_MISSIONS, self.node.mission_manager.get_mission_list_payload()],
+                separators=(',', ':')
+            ))
 
     def on_close(self):
         USVSocketHandler.sockets.discard(self)
@@ -159,7 +169,8 @@ class USVSocketHandler(tornado.websocket.WebSocketHandler):
                     if sock.ws_connection and not sock.ws_connection.is_closing():
                         sock.write_message(json_msg)
 
-            elif message[0] in (cls.MSG_RESOURCES, cls.MSG_VIDEO_META, cls.MSG_CAMERAS):
+            elif message[0] in (cls.MSG_RESOURCES, cls.MSG_VIDEO_META, cls.MSG_CAMERAS,
+                               cls.MSG_MISSIONS, cls.MSG_GPS_POS):
                 json_msg = json.dumps(message, separators=(',', ':'))
                 for sock in cls.sockets:
                     if sock.ws_connection and not sock.ws_connection.is_closing():
@@ -262,3 +273,60 @@ class USVSocketHandler(tornado.websocket.WebSocketHandler):
             quality = argv[1].get("quality")  # "low" / "medium" / "high"
             if topic is not None:
                 self.node.on_video_settings(topic, fps, quality)
+
+
+class MBTilesHandler(tornado.web.RequestHandler):
+    """
+    Serves map tiles from an MBTiles SQLite file.
+
+    URL pattern: /tiles/{z}/{x}/{y}.png
+    MBTiles uses TMS y-axis (y=0 at south), so y is flipped:
+        tms_y = (2^z - 1) - y
+    Returns:
+        200 + PNG bytes  — tile found
+        204              — tile not in database (Leaflet shows blank tile)
+        404              — mbtiles file not configured or missing
+    """
+
+    def initialize(self, mbtiles_path):
+        """
+        Args:
+            mbtiles_path: absolute path to .mbtiles file, or None if not configured.
+        """
+        self._mbtiles_path = mbtiles_path
+
+    def get(self, z, x, y):
+        if not self._mbtiles_path or not os.path.isfile(self._mbtiles_path):
+            self.set_status(404)
+            self.finish()
+            return
+
+        try:
+            import sqlite3
+            z, x, y = int(z), int(x), int(y)
+            tms_y = (2 ** z - 1) - y  # flip TMS y-axis
+
+            conn = sqlite3.connect(self._mbtiles_path)
+            try:
+                cursor = conn.execute(
+                    "SELECT tile_data FROM tiles "
+                    "WHERE zoom_level=? AND tile_column=? AND tile_row=?",
+                    (z, x, tms_y)
+                )
+                row = cursor.fetchone()
+            finally:
+                conn.close()
+
+            if row is None:
+                self.set_status(204)
+                self.finish()
+                return
+
+            self.set_header('Content-Type', 'image/png')
+            self.set_header('Cache-Control', 'public, max-age=86400')
+            self.write(row[0])
+
+        except Exception as e:
+            _log_e("MBTiles", "Error serving tile %s/%s/%s: %s" % (z, x, y, e))
+            self.set_status(500)
+            self.finish()

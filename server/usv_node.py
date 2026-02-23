@@ -27,7 +27,8 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, His
 
 from sensor_msgs.msg import Joy
 
-from .handlers import USVSocketHandler, NoCacheStaticFileHandler
+from .handlers import USVSocketHandler, NoCacheStaticFileHandler, MBTilesHandler
+from .mission_manager import MissionManager
 from .video_stream import H264Stream, get_max_fps, get_encoder
 from .camera_stream import (
     GStreamerStream, load_camera_config, build_cameras_available,
@@ -72,11 +73,29 @@ class USVWebNode(Node):
         self.declare_parameter('port', 8888)
         self.declare_parameter('title', socket.gethostname())
         self.declare_parameter('joy_topic', '/joy')
+        self.declare_parameter('mbtiles_path', '')
 
         self.port = self.get_parameter('port').value
         self.title = self.get_parameter('title').value
         self.joy_topic = self.get_parameter('joy_topic').value
         self.version = __version__
+
+        # Resolve MBTiles path (default: map.mbtiles in project root)
+        project_root = os.path.abspath(
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')
+        )
+        mbtiles_param = self.get_parameter('mbtiles_path').value
+        if mbtiles_param:
+            mbtiles_param = mbtiles_param if os.path.isabs(mbtiles_param) \
+                else os.path.join(project_root, mbtiles_param)
+        else:
+            mbtiles_param = os.path.join(project_root, 'map.mbtiles')
+        self.mbtiles_path = os.path.abspath(mbtiles_param) \
+            if os.path.isfile(mbtiles_param) else None
+        if self.mbtiles_path:
+            self.loginfo("MBTiles offline map: %s" % self.mbtiles_path)
+        else:
+            self.loginfo("No map.mbtiles found — offline map layer disabled")
 
         # --- Joy publisher ---
         self.joy_pub = self.create_publisher(Joy, self.joy_topic, 10)
@@ -120,9 +139,8 @@ class USVWebNode(Node):
         self.cameras_available = {}     # camera_id -> info dict (sent to browser)
         self._camera_configs_by_id = {} # camera_id -> config dict
 
-        # Load camera config
-        project_root = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')
-        cameras_yaml = os.path.join(os.path.abspath(project_root), 'cameras.yaml')
+        # Load camera config (project_root defined earlier during parameter resolution)
+        cameras_yaml = os.path.join(project_root, 'cameras.yaml')
         camera_configs = load_camera_config(cameras_yaml)
         self.cameras_available = build_cameras_available(camera_configs)
         # Map camera_id -> config for stream creation
@@ -139,6 +157,17 @@ class USVWebNode(Node):
         else:
             self.loginfo("GStreamer not available — direct camera streams disabled")
 
+        # --- Mission manager ---
+        self.mission_manager = MissionManager(
+            json_path=os.path.join(project_root, 'missions.json')
+        )
+
+        # --- GPS auto-subscription state ---
+        self._gps_topic = None           # name of currently subscribed NavSatFix topic
+        self._gps_sub = None             # rclpy Subscription
+        self._last_gps_broadcast = 0.0   # monotonic time of last GPS broadcast
+        self.NAV_SAT_FIX_TYPE = "sensor_msgs/msg/NavSatFix"
+
         self.lock = threading.Lock()
 
         # --- Tornado web server ---
@@ -146,6 +175,9 @@ class USVWebNode(Node):
 
         tornado_handlers = [
             (r"/ws", USVSocketHandler, {"node": self}),
+            (r"/tiles/(\d+)/(\d+)/(\d+)\.png", MBTilesHandler, {
+                "mbtiles_path": self.mbtiles_path,
+            }),
             (r"/(.*)", NoCacheStaticFileHandler, {
                 "path": os.path.abspath(static_path),
                 "default_filename": "index.html",
@@ -330,11 +362,66 @@ class USVWebNode(Node):
                     self._image_frame_count.pop(topic_name, None)
                     self._last_image_feed_time.pop(topic_name, None)
 
+            # Auto-subscribe to NavSatFix for the map panel
+            self._maybe_subscribe_gps()
+
         except Exception as e:
             self.logwarn("sync_subs error: %s" % str(e))
             traceback.print_exc()
         finally:
             self.lock.release()
+
+    def _maybe_subscribe_gps(self):
+        """
+        Auto-subscribe to the first NavSatFix topic found in all_topics.
+        Called from sync_subs() (already under self.lock).
+        Cleans up stale subscription if the topic disappeared.
+        """
+        if self._gps_sub is not None:
+            if self._gps_topic in self.all_topics:
+                return  # already subscribed and topic still alive
+            # Topic disappeared — clean up
+            self.destroy_subscription(self._gps_sub)
+            self._gps_sub = None
+            self._gps_topic = None
+            self.logwarn("NavSatFix topic disappeared, will re-subscribe when available")
+
+        # Find the first NavSatFix topic
+        for topic_name, topic_type in self.all_topics.items():
+            if topic_type == self.NAV_SAT_FIX_TYPE:
+                msg_class = self.get_msg_class(topic_type)
+                if msg_class is None:
+                    continue
+                qos = self.get_topic_qos(topic_name)
+                self._gps_sub = self.create_subscription(
+                    msg_class,
+                    topic_name,
+                    lambda msg, tn=topic_name: self._on_gps_msg(msg, tn),
+                    qos_profile=qos,
+                )
+                self._gps_topic = topic_name
+                self.loginfo("Auto-subscribed to NavSatFix: %s" % topic_name)
+                break
+
+    def _on_gps_msg(self, msg, topic_name):
+        """
+        Handle sensor_msgs/NavSatFix. Broadcast lat/lng to all clients as a 'g' message.
+        Rate-limited to 2 Hz — the map doesn't need faster updates.
+        """
+        now = time.monotonic()
+        if now - self._last_gps_broadcast < 0.5:  # 2 Hz max
+            return
+        self._last_gps_broadcast = now
+
+        if self.event_loop:
+            self.event_loop.add_callback(
+                USVSocketHandler.broadcast,
+                [USVSocketHandler.MSG_GPS_POS, {
+                    "lat": msg.latitude,
+                    "lng": msg.longitude,
+                    "topic": topic_name,
+                }]
+            )
 
     def _detect_fps(self, topic_name):
         """

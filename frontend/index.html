@@ -6,6 +6,7 @@
     <title>USV Control</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/virtual-joystick.css">
+    <link rel="stylesheet" href="css/leaflet.min.css">
 </head>
 <body>
 
@@ -75,6 +76,12 @@
         </div>
     </div>
 
+    <!-- Map Panel -->
+    <div class="panel" id="map-panel" style="grid-column: 1 / -1;">
+        <div class="panel-header"><span>Map</span></div>
+        <div class="panel-body"></div>
+    </div>
+
     <!-- Topic Viewers Area -->
     <div id="viewer-area" style="grid-column: 1 / -1;"></div>
 
@@ -93,9 +100,11 @@
 <script src="js/inputManager.js"></script>
 <script src="js/fullscreen.js"></script>
 <script src="js/lib/jmuxer.min.js"></script>
+<script src="js/lib/leaflet.min.js"></script>
 <script src="js/viewers/Viewer.js"></script>
 <script src="js/viewers/GenericViewer.js"></script>
 <script src="js/viewers/ImageViewer.js"></script>
+<script src="js/mapPanel.js"></script>
 <script src="js/app.js"></script>
 
 </body>

@@ -342,6 +342,11 @@ function updateCameraListHighlights() {
     }
 }
 
+// --- Map Panel ---
+const mapPanel = new MapPanel(document.getElementById('map-panel'));
+conn.onMissions = (data) => mapPanel.onMissions(data);
+conn.onGpsPos   = (data) => mapPanel.onGpsPos(data);
+
 conn.connect();
 
 // --- Input Manager (USB gamepad + virtual joystick) ---

@@ -1,0 +1,15 @@
+{
+  "missions": [
+    {
+      "id": "mission-1",
+      "name": "Example Survey Route",
+      "waypoints": [
+        {"lat": 56.9496, "lng": 24.1052},
+        {"lat": 56.9510, "lng": 24.1080},
+        {"lat": 56.9525, "lng": 24.1065},
+        {"lat": 56.9580, "lng": 24.0980},
+        {"lat": 56.9512, "lng": 24.1035}
+      ]
+    }
+  ]
+}
