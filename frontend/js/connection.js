@@ -26,6 +26,7 @@ class USVConnection {
         this.onCameras = null;       // (cameras: {cameraId: {name, source, ...}})
         this.onMissions = null;      // (data: {missions: [...]})
         this.onGpsPos = null;        // (data: {lat, lng, topic})
+        this.onMapLayers = null;     // (data: {layer_name: {label}, ...})
 
         // Bandwidth tracking
         this._bytesReceived = 0;
@@ -155,6 +156,10 @@ class USVConnection {
 
             case 'g': // GPS POSITION (USV)
                 if (this.onGpsPos) this.onGpsPos(data);
+                break;
+
+            case 'l': // OFFLINE MAP LAYER LIST
+                if (this.onMapLayers) this.onMapLayers(data);
                 break;
         }
     }

@@ -28,7 +28,7 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, His
 
 from sensor_msgs.msg import Joy
 
-from .handlers import USVSocketHandler, NoCacheStaticFileHandler, MBTilesHandler
+from .handlers import USVSocketHandler, NoCacheStaticFileHandler, CORSStaticFileHandler, MBTilesHandler, VectorTileHandler, MapStyleHandler
 from .mission_manager import MissionManager
 from .video_stream import H264Stream, get_max_fps, get_encoder
 from .camera_stream import (
@@ -74,29 +74,59 @@ class USVWebNode(Node):
         self.declare_parameter('port', 8888)
         self.declare_parameter('title', socket.gethostname())
         self.declare_parameter('joy_topic', '/joy')
-        self.declare_parameter('mbtiles_path', '')
+        self.declare_parameter('maps_dir', '')
 
         self.port = self.get_parameter('port').value
         self.title = self.get_parameter('title').value
         self.joy_topic = self.get_parameter('joy_topic').value
         self.version = __version__
 
-        # Resolve MBTiles path (default: map.mbtiles in project root)
         project_root = os.path.abspath(
             os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')
         )
-        mbtiles_param = self.get_parameter('mbtiles_path').value
-        if mbtiles_param:
-            mbtiles_param = mbtiles_param if os.path.isabs(mbtiles_param) \
-                else os.path.join(project_root, mbtiles_param)
+
+        # --- Offline map layers: scan maps/ directory for .mbtiles files ---
+        # Each .mbtiles file becomes a selectable offline basemap layer.
+        # Layer name = filename without extension (e.g. nautical.mbtiles → "nautical").
+        # Also accepts a single map.mbtiles in the project root for backwards compat.
+        maps_dir_param = self.get_parameter('maps_dir').value
+        if maps_dir_param:
+            maps_dir = maps_dir_param if os.path.isabs(maps_dir_param) \
+                else os.path.join(project_root, maps_dir_param)
         else:
-            mbtiles_param = os.path.join(project_root, 'map.mbtiles')
-        self.mbtiles_path = os.path.abspath(mbtiles_param) \
-            if os.path.isfile(mbtiles_param) else None
-        if self.mbtiles_path:
-            self.loginfo("MBTiles offline map: %s" % self.mbtiles_path)
+            maps_dir = os.path.join(project_root, 'maps')
+
+        self.map_layers = {}  # layer_name -> {label, path} — sent to browser as "l" message
+
+        # Scan maps/ directory
+        if os.path.isdir(maps_dir):
+            for fname in sorted(os.listdir(maps_dir)):
+                if fname.lower().endswith('.mbtiles'):
+                    layer_name = fname[:-len('.mbtiles')]
+                    layer_path = os.path.join(maps_dir, fname)
+                    label = layer_name.replace('_', ' ').replace('-', ' ').title()
+                    self.map_layers[layer_name] = {'label': label, 'path': layer_path}
+                    self.loginfo("Offline map layer '%s': %s" % (layer_name, layer_path))
+
+        # Backwards compat: single map.mbtiles in project root
+        legacy_path = os.path.join(project_root, 'map.mbtiles')
+        if os.path.isfile(legacy_path) and 'map' not in self.map_layers:
+            self.map_layers['map'] = {'label': 'Offline Map', 'path': legacy_path}
+            self.loginfo("Offline map layer 'map' (legacy): %s" % legacy_path)
+
+        if self.map_layers:
+            self.loginfo("%d offline map layer(s) available" % len(self.map_layers))
         else:
-            self.loginfo("No map.mbtiles found — offline map layer disabled")
+            self.loginfo("No offline map layers found — place .mbtiles files in maps/")
+
+        # Open SQLite connections for all offline layers at startup
+        MBTilesHandler.open_layers(self.map_layers)
+
+        # Set path to the Positron base style JSON for vector tile styling
+        _style_path = os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), '..', 'frontend', 'style', 'positron-base.json'
+        )
+        MapStyleHandler.set_style_path(os.path.abspath(_style_path))
 
         # --- Joy publisher ---
         self.joy_pub = self.create_publisher(Joy, self.joy_topic, 10)
@@ -176,8 +206,20 @@ class USVWebNode(Node):
 
         tornado_handlers = [
             (r"/ws", USVSocketHandler, {"node": self}),
-            (r"/tiles/(\d+)/(\d+)/(\d+)\.png", MBTilesHandler, {
-                "mbtiles_path": self.mbtiles_path,
+            # Raster tile handler (PNG/JPG MBTiles)
+            (r"/tiles/([^/]+)/(\d+)/(\d+)/(\d+)\.png", MBTilesHandler, {"node": self}),
+            # Vector tile handler (PBF MBTiles — no TMS y-flip)
+            (r"/tiles/([^/]+)/(\d+)/(\d+)/(\d+)\.pbf", VectorTileHandler, {"node": self}),
+            # MapLibre GL style JSON (generated per-layer, patched to local URLs)
+            (r"/style/([^/]+)\.json", MapStyleHandler, {"node": self}),
+            # Font glyphs for MapLibre GL text rendering (Open Sans Regular/Bold)
+            # URL form: /fonts/Open%20Sans%20Regular/0-255.pbf
+            (r"/fonts/(.*\.pbf)", CORSStaticFileHandler, {
+                "path": os.path.abspath(os.path.join(static_path, 'fonts')),
+            }),
+            # Sprites for MapLibre GL icons
+            (r"/sprites/(.*)", CORSStaticFileHandler, {
+                "path": os.path.abspath(os.path.join(static_path, 'sprites')),
             }),
             (r"/(.*)", NoCacheStaticFileHandler, {
                 "path": os.path.abspath(static_path),

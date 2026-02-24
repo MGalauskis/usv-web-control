@@ -2,15 +2,70 @@
  * MapPanel — Leaflet map panel for USV position and mission visualization.
  *
  * Always-visible panel (not a viewer tile). Shows:
- *   - OpenStreetMap (online) or Offline (MBTiles) tile layer — selectable via dropdown
- *   - USV position dot (L.circleMarker, updated in real time from NavSatFix)
+ *   - Basemap layer selector: online (OSM, Satellite) + offline MBTiles from server
+ *       Raster MBTiles (PNG/JPG) → L.tileLayer via /tiles/{layer}/{z}/{x}/{y}.png
+ *       Vector MBTiles (PBF)    → L.maplibreGL via /style/{layer}.json (MapLibre GL JS)
+ *   - Overlay checkboxes: additive layers (OpenSeaMap nautical marks, etc.)
+ *   - USV position arrow marker (updated in real time from NavSatFix / dummy GPS)
  *   - Active mission polyline + waypoint dots (drawn from server-provided missions.json)
+ *
+ * Layer data flow:
+ *   Server scans maps/ dir → broadcasts ["l", {layer_name: {label}, ...}] on connect
+ *   → onMapLayers() adds offline options to basemap dropdown
+ *   Online layers are always available; offline layers depend on server having the file.
  *
  * Usage (in app.js):
  *   const mapPanel = new MapPanel(document.getElementById('map-panel'));
- *   conn.onMissions = (data) => mapPanel.onMissions(data);
- *   conn.onGpsPos   = (data) => mapPanel.onGpsPos(data);
+ *   conn.onMissions   = (data) => mapPanel.onMissions(data);
+ *   conn.onGpsPos     = (data) => mapPanel.onGpsPos(data);
+ *   conn.onMapLayers  = (data) => mapPanel.onMapLayers(data);
  */
+
+// ----- Static layer definitions -----
+// Basemaps: mutually exclusive — only one active at a time.
+const ONLINE_BASEMAPS = [
+    {
+        name: 'osm',
+        label: 'OpenStreetMap',
+        online: true,
+        layer: () => L.tileLayer(
+            'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                maxZoom: 19,
+            }
+        ),
+    },
+    {
+        name: 'satellite',
+        label: 'Satellite (ESRI)',
+        online: true,
+        layer: () => L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            {
+                attribution: 'Tiles &copy; Esri &mdash; Source: Esri, USGS, NOAA',
+                maxZoom: 19,
+            }
+        ),
+    },
+];
+
+// Overlays: additive — any number can be active simultaneously.
+const ONLINE_OVERLAYS = [
+    {
+        name: 'openseamap',
+        label: 'OpenSeaMap (nautical)',
+        layer: () => L.tileLayer(
+            'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
+            {
+                attribution: 'Map data &copy; <a href="https://www.openseamap.org">OpenSeaMap</a> contributors',
+                maxZoom: 18,
+                opacity: 0.8,
+            }
+        ),
+    },
+];
+
 class MapPanel {
     /**
      * @param {HTMLElement} panelEl — the #map-panel .panel element (already in DOM)
@@ -21,31 +76,34 @@ class MapPanel {
         this._usvMarker = null;       // L.marker (divIcon arrow) for USV
         this._usvHeading = 0;         // last known heading in degrees
         this._missionLayer = null;    // L.polyline for mission path
-        this._waypointMarkers = [];   // L.circleMarker[] for individual waypoints
+        this._waypointMarkers = [];   // L.circleMarker[] for individual waypoints + arrows
         this._usvLatLng = null;       // last known USV position [lat, lng]
         this._missions = [];          // latest missions array from server
-        this._layers = {};            // layer name -> L.TileLayer
-        this._activeLayerName = 'osm';
-        this._mbtilesAvailable = false;
-        this._layerSelect = null;
-        this._mbtilesOpt = null;
+
+        // Layer state
+        this._basemapLayers = {};     // name -> L.TileLayer (basemaps, mutually exclusive)
+        this._overlayLayers = {};     // name -> L.TileLayer (overlays, additive)
+        this._activeBasemap = 'osm'; // currently active basemap name
+        this._activeOverlays = new Set(); // names of currently active overlays
+
+        // UI elements
+        this._basemapSelect = null;
+        this._overlayContainer = null; // div holding overlay checkboxes
 
         // --- Smooth interpolation state ---
-        // Instead of jumping to each GPS fix, we animate from the previous
-        // position to the new one over the expected update interval.
-        this._interpFrom = null;      // [lat, lng] start of current interpolation
-        this._interpTo   = null;      // [lat, lng] target (latest GPS fix)
+        this._interpFrom = null;
+        this._interpTo   = null;
         this._interpHeadingFrom = 0;
         this._interpHeadingTo   = 0;
-        this._interpStartMs = 0;      // performance.now() when interpolation began
-        this._interpDurMs   = 1100;   // duration slightly longer than update interval
-        this._rafId = null;           // requestAnimationFrame handle
+        this._interpStartMs = 0;
+        this._interpDurMs   = 1100;
+        this._rafId = null;
 
         this._initMap();
-        this._initLayers();
-        this._buildLayerSelector();
+        this._initBasemaps();
+        this._initOverlays();
+        this._buildLayerUI();
         this._buildButtons();
-        this._probeMbtiles();
         this._startInterpLoop();
     }
 
@@ -62,109 +120,178 @@ class MapPanel {
             attributionControl: true,
         });
 
-        // Keep map sized correctly when panel resizes (e.g. window resize)
         if (typeof ResizeObserver !== 'undefined') {
             const ro = new ResizeObserver(() => this._map.invalidateSize());
             ro.observe(bodyEl);
         }
     }
 
-    _initLayers() {
-        this._layers['osm'] = L.tileLayer(
-            'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-            {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-                maxZoom: 19,
-            }
-        );
-
-        // Offline MBTiles — served by Tornado at /tiles/{z}/{x}/{y}.png.
-        // Returns 404 if no file configured; errorTileUrl='' suppresses broken img.
-        this._layers['mbtiles'] = L.tileLayer(
-            '/tiles/{z}/{x}/{y}.png',
-            {
-                attribution: 'Offline tiles',
-                maxZoom: 18,
-                errorTileUrl: '',
-            }
-        );
-
-        // Start with OSM
-        this._layers['osm'].addTo(this._map);
+    _initBasemaps() {
+        // Create all online basemap tile layers up front
+        for (const def of ONLINE_BASEMAPS) {
+            this._basemapLayers[def.name] = def.layer();
+        }
+        // Start with the saved basemap or OSM
+        const saved = localStorage.getItem('usv_map_basemap');
+        const initial = (saved && this._basemapLayers[saved]) ? saved : 'osm';
+        this._activeBasemap = initial;
+        this._basemapLayers[initial].addTo(this._map);
     }
 
-    _buildLayerSelector() {
+    _initOverlays() {
+        // Create all online overlay tile layers up front
+        for (const def of ONLINE_OVERLAYS) {
+            this._overlayLayers[def.name] = def.layer();
+        }
+        // Restore saved overlay state
+        const saved = JSON.parse(localStorage.getItem('usv_map_overlays') || '[]');
+        for (const name of saved) {
+            if (this._overlayLayers[name]) {
+                this._overlayLayers[name].addTo(this._map);
+                this._activeOverlays.add(name);
+            }
+        }
+    }
+
+    /**
+     * Called when server sends ['l', {layer_name: {label, format}, ...}].
+     * Adds offline basemap options to the dropdown for each available layer.
+     * Raster (PNG/JPG) layers use L.tileLayer.
+     * Vector (PBF) layers use L.maplibreGL with a server-generated style JSON.
+     */
+    onMapLayers(data) {
+        // data = { layer_name: { label, format }, ... }
+        const saved = localStorage.getItem('usv_map_basemap');
+        for (const [name, info] of Object.entries(data)) {
+            if (this._basemapLayers[name]) continue; // already registered
+
+            const isPbf = info.format === 'pbf';
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = info.label + (isPbf ? ' (vector)' : '');
+
+            if (isPbf) {
+                // Vector tiles rendered via MapLibre GL JS, wrapped as a Leaflet layer
+                // by leaflet-maplibre-gl. Style JSON is generated server-side, pointing
+                // to local /tiles, /fonts, /sprites endpoints.
+                if (typeof L.maplibreGL === 'undefined') {
+                    // MapLibre GL plugin not loaded — mark as unsupported
+                    opt.textContent = info.label + ' ⚠ (plugin missing)';
+                    opt.disabled = true;
+                } else {
+                    this._basemapLayers[name] = L.maplibreGL({
+                        style: `${location.origin}/style/${name}.json`,
+                        attribution: info.label + ' (offline vector)',
+                    });
+                }
+            } else {
+                // Raster layer — create Leaflet tile layer pointing to server proxy
+                this._basemapLayers[name] = L.tileLayer(
+                    `/tiles/${name}/{z}/{x}/{y}.png`,
+                    {
+                        attribution: info.label + ' (offline)',
+                        maxZoom: 18,
+                        errorTileUrl: '',  // blank tile on missing — no broken image
+                    }
+                );
+            }
+
+            // Append option first so select.value assignment below finds the element
+            if (this._offlineGroup) this._offlineGroup.appendChild(opt);
+
+            // Restore saved selection if this layer was previously active
+            if (saved === name && this._basemapLayers[name]) {
+                this._switchBasemap(name);
+                if (this._basemapSelect) this._basemapSelect.value = name;
+            }
+        }
+    }
+
+    _buildLayerUI() {
         const header = this._panelEl.querySelector('.panel-header');
 
         const controls = document.createElement('div');
         controls.className = 'map-header-controls';
 
-        this._layerSelect = document.createElement('select');
-        this._layerSelect.className = 'iv-setting-select';
-        this._layerSelect.title = 'Map tile source';
+        // --- Basemap dropdown with optgroups ---
+        this._basemapSelect = document.createElement('select');
+        this._basemapSelect.className = 'iv-setting-select';
+        this._basemapSelect.title = 'Basemap';
 
-        const osmOpt = document.createElement('option');
-        osmOpt.value = 'osm';
-        osmOpt.textContent = 'OpenStreetMap (online)';
-        this._layerSelect.appendChild(osmOpt);
+        const onlineGroup = document.createElement('optgroup');
+        onlineGroup.label = 'Online';
+        for (const def of ONLINE_BASEMAPS) {
+            const opt = document.createElement('option');
+            opt.value = def.name;
+            opt.textContent = def.label;
+            onlineGroup.appendChild(opt);
+        }
+        this._basemapSelect.appendChild(onlineGroup);
 
-        this._mbtilesOpt = document.createElement('option');
-        this._mbtilesOpt.value = 'mbtiles';
-        this._mbtilesOpt.textContent = 'Offline (MBTiles) — not configured';
-        this._mbtilesOpt.disabled = true;
-        this._mbtilesOpt.title = 'Place map.mbtiles in the project root to enable';
-        this._layerSelect.appendChild(this._mbtilesOpt);
+        this._offlineGroup = document.createElement('optgroup');
+        this._offlineGroup.label = 'Offline';
+        this._basemapSelect.appendChild(this._offlineGroup);
+        // Offline options are added dynamically in onMapLayers()
 
-        this._layerSelect.value = 'osm';
-        this._layerSelect.addEventListener('change', () => {
-            const chosen = this._layerSelect.value;
-            localStorage.setItem('usv_map_layer', chosen);
-            this._onLayerChange(chosen);
+        this._basemapSelect.value = this._activeBasemap;
+        this._basemapSelect.addEventListener('change', () => {
+            const chosen = this._basemapSelect.value;
+            localStorage.setItem('usv_map_basemap', chosen);
+            this._switchBasemap(chosen);
         });
+        controls.appendChild(this._basemapSelect);
 
-        controls.appendChild(this._layerSelect);
+        // --- Overlay checkboxes ---
+        this._overlayContainer = document.createElement('div');
+        this._overlayContainer.className = 'map-overlay-controls';
+
+        for (const def of ONLINE_OVERLAYS) {
+            const label = document.createElement('label');
+            label.className = 'map-overlay-label';
+            label.title = 'Toggle ' + def.label;
+
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.className = 'map-overlay-cb';
+            cb.checked = this._activeOverlays.has(def.name);
+            cb.addEventListener('change', () => this._toggleOverlay(def.name, cb.checked));
+
+            label.appendChild(cb);
+            label.appendChild(document.createTextNode(def.label));
+            this._overlayContainer.appendChild(label);
+        }
+
+        controls.appendChild(this._overlayContainer);
         header.appendChild(controls);
     }
 
-    _onLayerChange(layerName) {
-        const newLayer = this._layers[layerName];
+    _switchBasemap(name) {
+        const newLayer = this._basemapLayers[name];
         if (!newLayer) return;
-        const oldLayer = this._layers[this._activeLayerName];
-        if (oldLayer) this._map.removeLayer(oldLayer);
+        const oldLayer = this._basemapLayers[this._activeBasemap];
+        if (oldLayer && this._map.hasLayer(oldLayer)) this._map.removeLayer(oldLayer);
         newLayer.addTo(this._map);
-        this._activeLayerName = layerName;
-    }
-
-    _probeMbtiles() {
-        // HEAD request to the tile server — 404 means not configured
-        fetch('/tiles/0/0/0.png', { method: 'HEAD' })
-            .then(resp => {
-                this._mbtilesAvailable = (resp.status !== 404);
-                this._updateMbtilesOption();
-            })
-            .catch(() => {
-                this._mbtilesAvailable = false;
-                this._updateMbtilesOption();
-            });
-    }
-
-    _updateMbtilesOption() {
-        if (!this._mbtilesOpt) return;
-        if (this._mbtilesAvailable) {
-            this._mbtilesOpt.disabled = false;
-            this._mbtilesOpt.textContent = 'Offline (MBTiles)';
-            this._mbtilesOpt.title = '';
-            // Restore previously saved layer preference now that it's available
-            const saved = localStorage.getItem('usv_map_layer');
-            if (saved === 'mbtiles') {
-                this._layerSelect.value = 'mbtiles';
-                this._onLayerChange('mbtiles');
-            }
-        } else {
-            this._mbtilesOpt.disabled = true;
-            this._mbtilesOpt.textContent = 'Offline (MBTiles) — not configured';
-            this._mbtilesOpt.title = 'Place map.mbtiles in the project root to enable';
+        // Ensure overlays stay on top after basemap swap.
+        // Note: MapLibre GL layers render in a <canvas> that sits below Leaflet's
+        // SVG/canvas pane, so Leaflet overlays are always on top automatically.
+        for (const n of this._activeOverlays) {
+            if (this._overlayLayers[n]) this._overlayLayers[n].bringToFront();
         }
+        this._activeBasemap = name;
+    }
+
+    _toggleOverlay(name, active) {
+        const layer = this._overlayLayers[name];
+        if (!layer) return;
+        if (active) {
+            layer.addTo(this._map);
+            layer.bringToFront();
+            this._activeOverlays.add(name);
+        } else {
+            this._map.removeLayer(layer);
+            this._activeOverlays.delete(name);
+        }
+        localStorage.setItem('usv_map_overlays', JSON.stringify([...this._activeOverlays]));
     }
 
     // ----- Action buttons -----

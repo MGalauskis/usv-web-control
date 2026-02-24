@@ -563,8 +563,35 @@ body {
 .map-header-controls {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
     margin-left: auto;
+}
+
+/* Overlay toggle checkboxes */
+.map-overlay-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.map-overlay-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-dim);
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.map-overlay-label:hover {
+    color: var(--text);
+}
+
+.map-overlay-cb {
+    accent-color: var(--green);
+    cursor: pointer;
 }
 
 /* Floating action buttons — bottom-right corner of the map */
