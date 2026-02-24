@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Git Commits
+
+Never add `Co-Authored-By: Claude` or any Claude attribution to commit messages.
+
 ## Project Overview
 
 USV Web Control is a browser-based interface for controlling an Unmanned Surface Vehicle (USV) through ROS2. It bridges a web UI to ROS2 via WebSockets, allowing operators to send joystick commands and monitor ROS2 topics remotely.
@@ -64,6 +68,9 @@ Text messages are JSON arrays: `[type_char, payload_dict]`
 | S→B | `"r"` | System resource metrics (CPU/GPU usage) |
 | S→B | `"v"` | Video stream metadata (fps, resolution, encoder) |
 | S→B | `"c"` | Camera list (direct GStreamer cameras) |
+| S→B | `"w"` | Mission list (all missions from missions.json) |
+| S→B | `"g"` | USV GPS position update `{lat, lng, heading?, topic}` |
+| S→B | `"l"` | Offline map layer list `{layer_name: {label}, ...}` |
 | B→S | `"s"` | Subscribe to ROS2 topic (with maxUpdateRate) |
 | B→S | `"u"` | Unsubscribe from ROS2 topic |
 | B→S | `"j"` | Joystick data (axes + buttons arrays) |
@@ -355,13 +362,26 @@ Additional waypoint operations:
 
 ### Map Layers
 
-The map must support multiple tile/data sources via a **layer dropdown menu** (multi-select or toggle-based, so layers can be overlaid):
+Two categories of layers are implemented:
 
-- **Satellite imagery** — aerial/satellite basemap (e.g., from a tile provider or offline tile cache).
-- **Nautical chart / depth map** — bathymetric data showing water depth contours, important for USV route safety.
-- **Water/land boundary map** — clear delineation of navigable water vs. land, used for traversability constraints.
+**Basemaps** (mutually exclusive — one active at a time, dropdown selector):
+- `osm` — OpenStreetMap (online, always available)
+- `satellite` — ESRI World Imagery (online, always available)
+- Offline MBTiles layers — discovered automatically from the `maps/` directory, sent to browser via `"l"` WebSocket message on connect
 
-Layers should be stackable with adjustable opacity where it makes sense (e.g., nautical chart overlaid on satellite). The specific tile sources and providers will be defined later — the architecture should support swapping tile URLs without code changes.
+**Overlays** (additive — checkbox toggles, stacked on top of basemap):
+- `openseamap` — OpenSeaMap nautical marks (online)
+- More overlays can be added by extending `ONLINE_OVERLAYS` in `mapPanel.js`
+
+**Offline layer discovery:** The server scans `maps/` in the project root at startup. Each `.mbtiles` file becomes a layer. The filename (without extension) is the layer name; it's title-cased for the label (e.g. `nautical_chart.mbtiles` → "Nautical Chart"). A legacy `map.mbtiles` in the project root is also accepted as layer name `"map"`.
+
+**Tile URL:** `/tiles/{layer_name}/{z}/{x}/{y}.png` — served by `MBTilesHandler` with TMS y-flip and persistent SQLite connection pool.
+
+**Server parameter:** `maps_dir` (ROS2 launch param, default `maps/` in project root).
+
+**Layer persistence:** Selected basemap and active overlays are saved to `localStorage` and restored on page reload.
+
+**Adding more online layers:** add entries to `ONLINE_BASEMAPS` or `ONLINE_OVERLAYS` in `mapPanel.js` — no server changes needed.
 
 ### USV Position and Quick Navigation
 
