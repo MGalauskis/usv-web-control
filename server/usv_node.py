@@ -11,6 +11,7 @@ Inspired by rosboard's architecture but with bidirectional communication:
 
 import asyncio
 import importlib
+import math
 import os
 import socket
 import threading
@@ -203,6 +204,7 @@ class USVWebNode(Node):
         threading.Thread(target=self.event_loop.start, daemon=True).start()
         threading.Thread(target=self.sync_subs_loop, daemon=True).start()
         threading.Thread(target=self.pingpong_loop, daemon=True).start()
+        threading.Thread(target=self._dummy_gps_loop, daemon=True).start()
 
         self.loginfo("USV Web Control listening on :%d" % self.port)
 
@@ -413,14 +415,21 @@ class USVWebNode(Node):
             return
         self._last_gps_broadcast = now
 
+        payload = {
+            "lat": msg.latitude,
+            "lng": msg.longitude,
+            "topic": topic_name,
+        }
+        # NavSatFix doesn't have a heading field in the standard definition,
+        # but dual-GPS receivers often publish heading on a companion topic
+        # (e.g. sensor_msgs/Imu or a custom msg). For now forward it if present.
+        if hasattr(msg, 'heading'):
+            payload["heading"] = float(msg.heading)
+
         if self.event_loop:
             self.event_loop.add_callback(
                 USVSocketHandler.broadcast,
-                [USVSocketHandler.MSG_GPS_POS, {
-                    "lat": msg.latitude,
-                    "lng": msg.longitude,
-                    "topic": topic_name,
-                }]
+                [USVSocketHandler.MSG_GPS_POS, payload]
             )
 
     def _detect_fps(self, topic_name):
@@ -682,6 +691,51 @@ class USVWebNode(Node):
                 encoder=get_gst_encoder() or "gstreamer",
                 passthrough=info.get("passthrough", False),
             )
+
+    def _dummy_gps_loop(self):
+        """
+        Broadcast a fake GPS position when no real NavSatFix topic is available.
+        The boat drifts slowly in a figure-8 pattern around a fixed anchor point.
+        Suppressed as soon as a real GPS subscription is active.
+        """
+        # Anchor near the centre of the sample mission (Riga area)
+        anchor_lat = 56.9530
+        anchor_lng = 24.1020
+        # Drift radius in degrees (~40 m at this latitude)
+        radius_lat = 0.00035
+        radius_lng = 0.00055
+        period = 60.0   # seconds for one full loop
+
+        t0 = time.monotonic()
+        while True:
+            time.sleep(1.0)  # 1 Hz is plenty for a dummy marker
+
+            # Only emit when there is no real GPS subscription
+            if self._gps_sub is not None:
+                continue
+
+            t = time.monotonic() - t0
+            phase = (t / period) * 2 * math.pi
+
+            # Lissajous figure-8: lat uses sin(2θ), lng uses sin(θ)
+            lat = anchor_lat + radius_lat * math.sin(2 * phase)
+            lng = anchor_lng + radius_lng * math.sin(phase)
+
+            # Dummy heading: slow continuous rotation (one full turn per period).
+            # On a real USV the dual-GPS receiver supplies heading directly in
+            # the NavSatFix (or a companion topic); no movement estimation needed.
+            heading_deg = (t / period * 360) % 360
+
+            if self.event_loop:
+                self.event_loop.add_callback(
+                    USVSocketHandler.broadcast,
+                    [USVSocketHandler.MSG_GPS_POS, {
+                        "lat": lat,
+                        "lng": lng,
+                        "heading": heading_deg,
+                        "topic": "dummy",
+                    }]
+                )
 
     def _on_system_metrics(self, data):
         """Called by SystemMetricsCollector with CPU/GPU usage data."""

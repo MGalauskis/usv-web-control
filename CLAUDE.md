@@ -365,7 +365,9 @@ Layers should be stackable with adjustable opacity where it makes sense (e.g., n
 
 ### USV Position and Quick Navigation
 
-The map always shows the **current real-time position of the USV** as a distinct marker (sourced from a ROS2 topic like `sensor_msgs/NavSatFix`). The marker should indicate heading/orientation if available.
+The map always shows the **current real-time position of the USV** as a distinct marker (sourced from a ROS2 topic like `sensor_msgs/NavSatFix`). The marker indicates heading/orientation from the GPS heading field.
+
+**Future: USV marker shape and colour** — the current marker is a plain `▲` Unicode arrow in red (`#e94560`). In the future this should be replaced with an SVG silhouette matching the actual USV hull shape, coloured to match the physical boat. The CSS class is `.map-usv-arrow` in `style.css` and the icon is built in `MapPanel._usvIcon()` in `mapPanel.js`.
 
 **Quick-zoom buttons** for common navigation actions:
 - **Go to USV** — center and zoom the map on the USV's current position.

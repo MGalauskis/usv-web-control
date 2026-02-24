@@ -18,7 +18,8 @@ class MapPanel {
     constructor(panelEl) {
         this._panelEl = panelEl;
         this._map = null;
-        this._usvMarker = null;       // L.circleMarker for USV dot
+        this._usvMarker = null;       // L.marker (divIcon arrow) for USV
+        this._usvHeading = 0;         // last known heading in degrees
         this._missionLayer = null;    // L.polyline for mission path
         this._waypointMarkers = [];   // L.circleMarker[] for individual waypoints
         this._usvLatLng = null;       // last known USV position [lat, lng]
@@ -29,11 +30,23 @@ class MapPanel {
         this._layerSelect = null;
         this._mbtilesOpt = null;
 
+        // --- Smooth interpolation state ---
+        // Instead of jumping to each GPS fix, we animate from the previous
+        // position to the new one over the expected update interval.
+        this._interpFrom = null;      // [lat, lng] start of current interpolation
+        this._interpTo   = null;      // [lat, lng] target (latest GPS fix)
+        this._interpHeadingFrom = 0;
+        this._interpHeadingTo   = 0;
+        this._interpStartMs = 0;      // performance.now() when interpolation began
+        this._interpDurMs   = 1100;   // duration slightly longer than update interval
+        this._rafId = null;           // requestAnimationFrame handle
+
         this._initMap();
         this._initLayers();
         this._buildLayerSelector();
         this._buildButtons();
         this._probeMbtiles();
+        this._startInterpLoop();
     }
 
     // ----- Map and layer initialisation -----
@@ -104,7 +117,9 @@ class MapPanel {
 
         this._layerSelect.value = 'osm';
         this._layerSelect.addEventListener('change', () => {
-            this._onLayerChange(this._layerSelect.value);
+            const chosen = this._layerSelect.value;
+            localStorage.setItem('usv_map_layer', chosen);
+            this._onLayerChange(chosen);
         });
 
         controls.appendChild(this._layerSelect);
@@ -139,6 +154,12 @@ class MapPanel {
             this._mbtilesOpt.disabled = false;
             this._mbtilesOpt.textContent = 'Offline (MBTiles)';
             this._mbtilesOpt.title = '';
+            // Restore previously saved layer preference now that it's available
+            const saved = localStorage.getItem('usv_map_layer');
+            if (saved === 'mbtiles') {
+                this._layerSelect.value = 'mbtiles';
+                this._onLayerChange('mbtiles');
+            }
         } else {
             this._mbtilesOpt.disabled = true;
             this._mbtilesOpt.textContent = 'Offline (MBTiles) — not configured';
@@ -186,28 +207,111 @@ class MapPanel {
     }
 
     /**
-     * Called when server sends ['g', {lat, lng, topic}].
-     * Creates or moves the USV marker.
+     * Build the divIcon HTML for the USV heading arrow.
+     * SVG triangle: tip at top-centre (north = 0°), rotated by headingDeg.
+     * TODO: replace with the actual USV silhouette shape and colour.
+     */
+    _usvIcon(headingDeg) {
+        // Pointy triangle: narrow base, tall tip — all within a 28×28 viewBox.
+        // Points: tip at (14,1), base-left at (4,27), base-right at (24,27).
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
+            <polygon points="14,1 4,27 14,22 24,27"
+                fill="#e94560" stroke="#fff" stroke-width="1.5"
+                stroke-linejoin="round"/>
+        </svg>`;
+        return L.divIcon({
+            className: '',
+            html: `<div class="map-usv-arrow" style="transform:rotate(${headingDeg}deg)">${svg}</div>`,
+            iconSize: [28, 28],
+            iconAnchor: [14, 14],
+        });
+    }
+
+    /**
+     * Called when server sends ['g', {lat, lng, heading?, topic}].
+     * Records the new fix as the interpolation target — the animation loop
+     * takes care of actually moving the marker smoothly.
      */
     onGpsPos(data) {
         if (data.lat === undefined || data.lng === undefined) return;
         const latlng = [data.lat, data.lng];
         this._usvLatLng = latlng;
+        const heading = data.heading !== undefined ? data.heading : this._usvHeading;
 
-        if (!this._usvMarker) {
-            // First fix — create marker and auto-center
-            this._usvMarker = L.circleMarker(latlng, {
-                radius: 8,
-                color: '#e94560',      // --accent
-                fillColor: '#e94560',
-                fillOpacity: 0.9,
-                weight: 2,
+        if (!this._interpTo) {
+            // Very first fix — jump immediately, no interpolation needed
+            this._interpFrom        = latlng;
+            this._interpTo          = latlng;
+            this._interpHeadingFrom = heading;
+            this._interpHeadingTo   = heading;
+            this._interpStartMs     = performance.now();
+            this._usvHeading        = heading;
+
+            // Create marker at first fix and auto-center
+            this._usvMarker = L.marker(latlng, {
+                icon: this._usvIcon(heading),
+                interactive: false,
+                zIndexOffset: 1000,
             }).bindTooltip('USV', { permanent: false, direction: 'top' });
             this._usvMarker.addTo(this._map);
             this._map.setView(latlng, Math.max(this._map.getZoom(), 15));
         } else {
-            this._usvMarker.setLatLng(latlng);
+            // Subsequent fix — start a new interpolation from current animated position
+            this._interpFrom        = this._interpCurrent();
+            this._interpHeadingFrom = this._usvHeading;
+            this._interpTo          = latlng;
+            this._interpHeadingTo   = heading;
+            this._interpStartMs     = performance.now();
         }
+    }
+
+    /**
+     * Return the current interpolated [lat, lng] (clamped to 0–1 progress).
+     */
+    _interpCurrent() {
+        if (!this._interpFrom || !this._interpTo) return this._interpFrom;
+        const t = Math.min(1, (performance.now() - this._interpStartMs) / this._interpDurMs);
+        const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t; // ease-in-out
+        return [
+            this._interpFrom[0] + (this._interpTo[0] - this._interpFrom[0]) * ease,
+            this._interpFrom[1] + (this._interpTo[1] - this._interpFrom[1]) * ease,
+        ];
+    }
+
+    /**
+     * Interpolate heading taking the shortest angular path (handles 359°→1° wrap).
+     */
+    _interpHeadingCurrent() {
+        if (!this._interpTo) return this._usvHeading;
+        const t = Math.min(1, (performance.now() - this._interpStartMs) / this._interpDurMs);
+        const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+        let delta = this._interpHeadingTo - this._interpHeadingFrom;
+        // Shortest path around the circle
+        if (delta > 180) delta -= 360;
+        if (delta < -180) delta += 360;
+        return (this._interpHeadingFrom + delta * ease + 360) % 360;
+    }
+
+    /**
+     * rAF loop — runs continuously, updates marker position and heading
+     * every frame so movement is silky smooth between 1 Hz GPS fixes.
+     */
+    _startInterpLoop() {
+        const tick = () => {
+            this._rafId = requestAnimationFrame(tick);
+            if (!this._usvMarker || !this._interpTo) return;
+
+            const pos     = this._interpCurrent();
+            const heading = this._interpHeadingCurrent();
+
+            this._usvMarker.setLatLng(pos);
+            // Only rebuild icon when heading changed meaningfully (saves DOM work)
+            if (Math.abs(heading - this._usvHeading) > 0.3) {
+                this._usvHeading = heading;
+                this._usvMarker.setIcon(this._usvIcon(heading));
+            }
+        };
+        this._rafId = requestAnimationFrame(tick);
     }
 
     /** Center map on the USV's last known position. */

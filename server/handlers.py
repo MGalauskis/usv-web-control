@@ -1,5 +1,6 @@
 import json
 import os
+import sqlite3
 import time
 import types
 import uuid
@@ -286,7 +287,13 @@ class MBTilesHandler(tornado.web.RequestHandler):
         200 + PNG bytes  — tile found
         204              — tile not in database (Leaflet shows blank tile)
         404              — mbtiles file not configured or missing
+
+    SQLite connection is opened once and reused for all requests (check_same_thread=False
+    is safe because Tornado runs handlers on a single event-loop thread).
     """
+
+    # Class-level connection cache: path -> sqlite3.Connection
+    _conns = {}
 
     def initialize(self, mbtiles_path):
         """
@@ -294,28 +301,34 @@ class MBTilesHandler(tornado.web.RequestHandler):
             mbtiles_path: absolute path to .mbtiles file, or None if not configured.
         """
         self._mbtiles_path = mbtiles_path
+        # Open connection once and cache it — avoids per-request open/close overhead.
+        if mbtiles_path and mbtiles_path not in MBTilesHandler._conns:
+            if os.path.isfile(mbtiles_path):
+                try:
+                    conn = sqlite3.connect(mbtiles_path, check_same_thread=False)
+                    conn.row_factory = None  # raw tuples, faster
+                    MBTilesHandler._conns[mbtiles_path] = conn
+                    _log("MBTiles", "Opened database: %s" % mbtiles_path)
+                except Exception as e:
+                    _log_e("MBTiles", "Failed to open database %s: %s" % (mbtiles_path, e))
 
     def get(self, z, x, y):
-        if not self._mbtiles_path or not os.path.isfile(self._mbtiles_path):
+        conn = MBTilesHandler._conns.get(self._mbtiles_path)
+        if conn is None:
             self.set_status(404)
             self.finish()
             return
 
         try:
-            import sqlite3
             z, x, y = int(z), int(x), int(y)
             tms_y = (2 ** z - 1) - y  # flip TMS y-axis
 
-            conn = sqlite3.connect(self._mbtiles_path)
-            try:
-                cursor = conn.execute(
-                    "SELECT tile_data FROM tiles "
-                    "WHERE zoom_level=? AND tile_column=? AND tile_row=?",
-                    (z, x, tms_y)
-                )
-                row = cursor.fetchone()
-            finally:
-                conn.close()
+            cursor = conn.execute(
+                "SELECT tile_data FROM tiles "
+                "WHERE zoom_level=? AND tile_column=? AND tile_row=?",
+                (z, x, tms_y)
+            )
+            row = cursor.fetchone()
 
             if row is None:
                 self.set_status(204)

@@ -639,6 +639,16 @@ body {
     transform-origin: center center;
 }
 
+/* USV position arrow marker */
+.map-usv-arrow {
+    width: 28px;
+    height: 28px;
+    pointer-events: none;
+    transform-origin: center center;
+    filter: drop-shadow(0 0 3px rgba(233,69,96,0.6));
+    /* TODO: replace SVG triangle with actual USV silhouette shape and colour */
+}
+
 /* Responsive: shorter map on small screens */
 @media (max-width: 800px) {
     #map-panel .panel-body {
